@@ -226,6 +226,7 @@ def set_up_generators(param_dict):
 			param_dict["mean_img"] = data["mean_img"]
 			param_dict["std_dev"] = data["std_dev"]
 	else:
+		ut.ensure_dir(fma_stats_file)
 		print(("Calculating mean and standard deviation for the {} {} "
 			   "training set...").format(param_dict["which_size"], 
 								 		 param_dict["which_wavelet"].upper()), end="")

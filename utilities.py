@@ -31,7 +31,6 @@ def print_multilayer(name, data, tabs = 0):
         print("'{}': {}".format(name,data))
 
 def ensure_dir(pathname):
-
     directory = os.path.dirname(pathname)
     # Make sure the directory chain exists
     if not os.path.exists(directory):

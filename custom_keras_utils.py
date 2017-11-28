@@ -1,5 +1,20 @@
+# File: custom_keras_utils.py
+# Author: Rosy Davis, rosydavis@ieee.org
+# Last modified: 2017 Nov. 28
+#
+# A set of custom utilities for interfacing with Keras used in my masters project,
+# "Feature Extraction and Machine Learning Techniques for Musical Genre Determination."
+# These utilities are used to stack Keras layers according to custom patterns, then
+# provide a relatively standard interface to those models while tracking and recording
+# model results. (Due to the simplicity of the models used but the relative complexity of
+# the development and tracking requirements, extending Keras more directly would not have
+# really been appropriate.)
+#
+# Note that this code uses the Tensorflow backend and, as such, has a number of
+# Tensorflow-specific adaptations to adjust for known  issues in Tensorflow's memory
+# management.
+
 # Keras imports
-# TODO: docs -  https://keras.io/preprocessing/image/
 import keras
 import keras.preprocessing.image
 import keras.applications as keras_apps
@@ -138,10 +153,7 @@ def save_timeline(param_dict):
 	try:
 		with open(param_dict["run_timelines_file"], 'r') as f:
 			json_obj_old = json.load(f)
-	except Exception as e:
-		# # Usually exceptions are just because we need to create the file and can be 
-		# # safely skipped/ignored:
-		# print("ALERT: Could not load JSON: ",e)
+	except Exception as e: # couldn't load file, so make a new one
 		json_obj_old = {}
 		json_obj_old["traceEvents"] = []
 		
@@ -370,8 +382,7 @@ def run_pretrained_model(param_dict, generators, models, opts,
 		   						   param_dict["spu"].upper(),
 		   						   eta))
 
-	# TODO: a lot of this code and commenting is from Keras docs; credit appropriately
-	# https://keras.io/applications/
+	# Adapted from https://keras.io/applications/
 
 	# Get the pre-trained base model, without the top layer (because our input is a 
 	# different shape), using the trained weights for ImageNet, to use as a starting 
@@ -380,8 +391,8 @@ def run_pretrained_model(param_dict, generators, models, opts,
 							input_shape=param_dict["mean_img"].shape, 
 							weights='imagenet')
 	x = basemodel.output
-	# Add a global spatial average pooling layer at the output: [TODO: explain what  
-	# this does]
+	# Add a global spatial average pooling layer at the output for regularization and 
+	# to reduce overfitting:
 	x = keras.layers.GlobalAveragePooling2D()(x)
 	
 	# Add Affine/BatchNorm/ReLU/Dropout/Affine-softmax-categorization block:
@@ -453,7 +464,7 @@ def run_pretrained_model(param_dict, generators, models, opts,
 
 		# we need to recompile the model for these modifications to take effect
 		# we use SGD with a low learning rate because SGD trains more slowly than RMSprop  
-		# (a good thing, in this case): [TODO: check this]
+		# (a good thing, in this case):
 		models[model_key].compile(optimizer=keras.optimizers.SGD(lr=0.0001, momentum=0.9), 
 														  **param_dict["compile_args"])
 
@@ -607,18 +618,6 @@ def run_fcnn_model(param_dict, generators, opts, opt_key, models, eta,
 
 		# Now start from where we stopped on this round
 		initial_epoch = final_epoch
-
-	# results = models[model_key].fit_generator(
-	# 								generators["train"],
-	# 								validation_data=generators["val"],
-	# 								verbose=param_dict["run_verbosity"], 
-	# 								epochs=fcnn_pass_epochs,
-	# 								steps_per_epoch=param_dict["steps_per_epoch"], 
-	# 								validation_steps=param_dict["validation_steps"],
-	# 								max_queue_size=10, # Default: 10
-	# 								workers=1, # Default: 1
-	# 								use_multiprocessing=True, # Default: False
-	# 								) 
 
 	runsec = timer.toc()
 	

@@ -1,3 +1,11 @@
+# File: code_timing.py
+# Author: Rosy Davis, rosydavis@ieee.org
+# Last modified: 2017 Nov. 28
+#
+# Some utilities for tracking and displaying info about long-running tasks. Note that 
+# these timers are only appropriate for macroscopic amounts of time, i.e., processes that
+# run for minutes or hours, rather than microseconds.
+
 # For code timing and estimation:
 from timeit import default_timer as timer
 from datetime import datetime  

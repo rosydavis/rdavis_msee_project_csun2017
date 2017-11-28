@@ -10,7 +10,7 @@ generate_dwts = True  # Try to generate DWT files
 generate_cwts = False # Try to generate CWT files (slow)
 limit_num = None      # Set to None to run the whole set
 
-# Set up the CWT:
+# Set up the CWT (not ultimately used in this project):
 num_octaves = 11      # 11 octaves goes from ~22 Hz to 22050 Hz, i.e. nearly the full range of 
 					  # human hearing. Decreasing the number of octaves leads to loss on the 
 					  # *low* end in the CWT.
@@ -19,16 +19,12 @@ wvlt_cont = 'gaus4'
 # Set up the DWT:
 wvlt_disc = "db5" 
 
-# This block is adapted from FMA: A Dataset For Music Analysis
-# Michaël Defferrard, Kirell Benzi, Pierre Vandergheynst, Xavier Bresson, EPFL LTS2.
-# provided usage script
+# Imports
 import os
 
-#import IPython.display as ipd          # For ???
 import numpy as np                     # For math and analysis
 import pandas as pd                    # For data structures
-import matplotlib.pyplot as plt        # For graphing
-# import seaborn as sns
+import matplotlib.pyplot as plt        # For graphing and image generation
 import sklearn as skl                  # (scikit-learn) for various machine learning tasks
 import sklearn.utils, sklearn.preprocessing, sklearn.decomposition, sklearn.svm
 import librosa
@@ -37,22 +33,7 @@ import audioread
 import fma.utils as fma_utils          # Utilities provided for loading and manipulating the
 									   # Free Music Archive dataset.
 
-#########
-
-# # Do necessary imports:
-# import random
-# import scipy.signal
-# matplotlib.use('Agg') # don't show images to user--we're just going to save them
-
-# import os.path
-
-# # Data set
-# import fma.utils as utils
-# import IPython.display as ipd
-
-# import scipy.io.wavfile as wavf
-# import wave
-import pywt
+import pywt 						   # For wavelets
 import net_visualization as viz
 import code_timing as timer
 
@@ -60,10 +41,7 @@ import code_timing as timer
 scales_max = 2**(num_octaves-1)
 scales = np.geomspace(1, scales_max, num=num_octaves).astype(int)
 
-# Set up the vizualization module to generate images that will match the style of other
-# graphics in the report:
-viz.setup()
-# ...and make some tweaks specifically for the wavelet image generation:
+# Make some tweaks for the wavelet image generation:
 figdpi = 256 
 training_dim = 256
 border_pad = 0.525 # inches--determined experimentally. The code is written so that the

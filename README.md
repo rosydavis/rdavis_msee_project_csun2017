@@ -6,7 +6,7 @@ receiving a Masters of Science in
 [Electrical Engineering](https://www.csun.edu/engineering-computer-science/electrical-computer-engineering/) 
 from [California State University, Northridge](https://www.csun.edu/) in December 2017. 
 My advisor at CSUN is 
-[Dr. Xiyi Hang](https://www.csun.edu/engineering-computer-science/electrical-computer-engineering/xiyi-hang). 
+[Dr. Xiyi Hang](http://www.csun.edu/faculty/profiles/xiyi.hang.14). 
 My paper is currently not public, but when it is released in the
 CSUN library, I will add a link to this page. The commit history is relatively sparse
 because I extracted the core project code from another, more extensive private repo, in

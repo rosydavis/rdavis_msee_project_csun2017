@@ -1,30 +1,25 @@
-# Control variables
-verbose = True        # Controls how much debugging/progress information is printed
-overwrite = False     # Set to True to regenerate existing files - slow, but useful 
-					  #        for code debugging; don't have to delete files between runs
-seed = 42             # Used to seed the randomizer predictably; set to None to auto-generate
-cmap = "magma"        # Perceptually uniform and relatively friendly to various types of 
-					  #        color-blindness, as well as greyscaling gracefully; see 
-					  #        http://bids.github.io/colormap/
-generate_dwts = True  # Try to generate DWT files
-generate_cwts = False # Try to generate CWT files (slow)
-limit_num = None      # Set to None to run the whole set
+# File: generate_wavelets.py
+# Author: Rosy Davis, rosydavis@ieee.org
+# Last modified: 2017 Nov. 28
+#
+# A utility script to generate DWT image files for the image files requested.
 
-# Set up the CWT (not ultimately used in this project):
-num_octaves = 11      # 11 octaves goes from ~22 Hz to 22050 Hz, i.e. nearly the full range of 
-					  # human hearing. Decreasing the number of octaves leads to loss on the 
-					  # *low* end in the CWT.
-wvlt_cont = 'gaus4'  
+# Parse passed-in arguments:
+import argparse
 
-# Set up the DWT:
-wvlt_disc = "db5" 
-
-# Imports
+# Other imports
 import os
 
 import numpy as np                     # For math and analysis
 import pandas as pd                    # For data structures
+
+import matplotlib 					   # To set backend
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt        # For graphing and image generation
+import warnings
+import matplotlib.cbook
+warnings.filterwarnings("ignore",category=matplotlib.cbook.mplDeprecation)
+
 import sklearn as skl                  # (scikit-learn) for various machine learning tasks
 import sklearn.utils, sklearn.preprocessing, sklearn.decomposition, sklearn.svm
 import librosa
@@ -34,30 +29,98 @@ import fma.utils as fma_utils          # Utilities provided for loading and mani
 									   # Free Music Archive dataset.
 
 import pywt 						   # For wavelets
-import net_visualization as viz
-import code_timing as timer
+import code_timing as timer 		   # For tracking long runs
 
-# Finish setting up the CWT:
-scales_max = 2**(num_octaves-1)
-scales = np.geomspace(1, scales_max, num=num_octaves).astype(int)
 
-# Make some tweaks for the wavelet image generation:
-figdpi = 256 
-training_dim = 256
-border_pad = 0.525 # inches--determined experimentally. The code is written so that the
-				   # border (whitespace, axes, etc) on printed images extends beyond the 
-				   # image as used as data, so that rescaling won't introduce artifacts. 
-				   # This extra padding is used to make sure that when the border for printed
-				   # images is added, the image does not need to be rescaled to fit the page.
-plt.rcParams['xtick.labelsize'] = 6.5
-plt.rcParams['ytick.labelsize'] = 6.5
-colorbar_pad = 0.25 # inches--determined experimentally.
-plt.rcParams["figure.dpi"] = figdpi 
-small_img_dim = training_dim/figdpi # inches
-large_img_dim = 8.5-1.5-1-border_pad # inches: 8.5" paper, 1.5" margin on left and 1" on right
-# Set default to be the 1024x1024 pixel size
-plt.rcParams["figure.figsize"] = (small_img_dim, 
-								  small_img_dim) 
+
+
+# Set control variables from args. Start by setting up:
+parser = argparse.ArgumentParser()
+parser.add_argument("input_dir", help = "Directory for audio and metadata input files.")
+parser.add_argument("output_dir", help = "Directory for image output files.")
+parser.add_argument("-v", "--verbose", help = "Show all messages", action="store_true")
+parser.add_argument("-o", "--overwrite", 
+					help = "Overwrite existing files instead of skipping", 
+					action="store_true")
+parser.add_argument("-d", "--dwt", 
+					help = "Generate DWT files", 
+					action="store_true")
+parser.add_argument("-c", "--cwt", 
+					help = "Generate CWT files (slow)", 
+					action="store_true")
+parser.add_argument("-m", "--cmap", 
+					help = "Specify colormap for wavelet images (defaults to 'magma')")
+parser.add_argument("-x", "--wvlt_cont", 
+					help = "Specify continuous wavelet (defaults to 'gaus4')")
+parser.add_argument("-w", "--wvlt_disc", 
+					help = "Specify discrete wavelet (defaults to 'db5')")
+parser.add_argument("-z", "--size", 
+					help = "Specify the dataset size to use",
+					choices = ["small", "medium", "large"])
+parser.add_argument("-s", "--split", 
+					help = "Specify the split to use",
+					choices = ["training", "validation", "test"])
+parser.add_argument("-l", "--limit", help = "Limit how many files to generate", 
+					type = int)
+parser.add_argument("--octaves", 
+					help = "Specify the number of octaves to use (defaults to 11)", 
+					type = int)
+
+# Set defaults:
+
+# General
+verbose = False       # Controls how much debugging/progress information is printed
+generate_dwts = False # Should we try to generate DWT files?
+generate_cwts = False # Should we try to generate CWT files (slow)?
+overwrite = False     # Set to True to regenerate existing files - slow, but useful 
+					  #        for code debugging; don't have to delete files between runs
+cmap = "magma"        # Perceptually uniform and relatively friendly to various types of 
+					  #        color-blindness, as well as greyscaling gracefully; see 
+					  #        http://bids.github.io/colormap/
+limit_num = None      # Set to None to run the whole set
+
+# By default, generate training data for small dataset:
+requested_subset = "small"
+requested_split = "training"
+
+# Set up the CWT (not ultimately used in this project, because the slowness of the CWT
+# makes this approach less useful, but the code is provided in case it's useful):
+num_octaves = 11      # 11 octaves goes from ~22 Hz to 22050 Hz, i.e. nearly the full range of 
+					  # human hearing. Decreasing the number of octaves leads to loss on the 
+					  # *low* end in the CWT.
+wvlt_cont = 'gaus4'  
+
+# Set up the DWT:
+wvlt_disc = "db5" 
+
+# Override as necessary from arguments:
+args = parser.parse_args()
+input_dir = os.path.join(args.input_dir, '')
+output_dir = os.path.join(args.output_dir, '')
+if args.verbose:
+	verbose = args.verbose
+if args.overwrite:
+	overwrite = args.overwrite
+if args.dwt:
+	generate_dwts = args.dwt
+if args.cwt:
+	generate_cwts = args.cwt
+if args.cmap:
+	cmap = args.cmap
+if args.limit:
+	limit_num = args.limit
+if args.wvlt_cont:
+	wvlt_cont = args.wvlt_cont
+if args.wvlt_disc:
+	wvlt_disc = args.wvlt_disc
+if args.octaves:
+	num_octaves = args.octaves
+if args.size:
+	requested_subset = args.size
+if args.split:
+	requested_split = args.split
+
+
 
 # Wrapper to print that mutes output if we're not in verbose mode:
 def printt(*args, verbose = verbose, **kwargs):
@@ -66,27 +129,6 @@ def printt(*args, verbose = verbose, **kwargs):
 	with open("generate_wavelets.log","a+") as f:
 		print(*args, **kwargs, file=f)
 
-# Adapted from fma usage code:
-AUDIO_DIR = "/Volumes/MEDIA/fma_large/"
-IMAGE_DIR = "/Volumes/MEDIA/fma_large/data/"
-
-printt("\nGenerate run begun at {}.\n".format(timer.datetimestamp()))
-
-# Load the metadata files
-tracks = fma_utils.load(AUDIO_DIR + 'tracks.csv')
-features = fma_utils.load(AUDIO_DIR + 'features.csv')
-
-printt("Tracks and features loaded.")
-
-# Make sure everything in features is in tracks and vice versa
-np.testing.assert_array_equal(features.index, tracks.index)
-
-# echonest and genres are not currently used:
-# echonest = fma_utils.load(AUDIO_DIR + 'echonest.csv')
-# genres = fma_utils.load(AUDIO_DIR + 'genres.csv')
-
-# # Make sure everything in echonest is in tracks
-# assert echonest.index.isin(tracks.index).all()
 
 def flatten(arr):
 	flat = np.ndarray(0,dtype = arr[0].dtype)
@@ -103,7 +145,7 @@ def strip_filename(filename):
 	return stripped
 
 def fileify(stripped, subdir, tail):
-	fullpath = os.path.join(IMAGE_DIR, os.path.join(subdir, stripped + tail))
+	fullpath = os.path.join(output_dir, os.path.join(subdir, stripped + tail))
 	
 	# Make sure the directory chain exists
 	directory = os.path.dirname(fullpath)
@@ -171,8 +213,8 @@ def dwtplots(track_id, stripped, tree):
 	
 	fig.set_figwidth(small_img_dim+colorbar_pad)
 	cbar = fig.colorbar(cax, ticks=[vmin, vmax])
-	ax.set_ylabel(viz.axislabel("DWT Level"))
-	ax.set_xlabel(viz.axislabel("Time [sec]"))
+	ax.set_ylabel("DWT Level")
+	ax.set_xlabel("Time [sec]")
 	ax.set_yticks(np.arange(0, scales_max+1, scales_max/4))#np.append([1],(np.geomspace(1, scales_max, num_octaves))[-3:])) 
 	ax.set_xticks(np.arange(0, 31, 10)) # Clips are 30s long
 	ax.set_axis_on()
@@ -205,12 +247,10 @@ def cwtplots(track_id, stripped, data, t, frequencies):
 	ax.set_axis_off()
 	fig.add_axes(ax)
 
-	# Plots are time versus frequency:
+	# Plots are frequency versus time:
 	vmax = np.max(data)
 	vmin = np.min(data)
-	# OLD APPROACH
-#     cax = ax.contourf(t, np.log2(frequencies), data, cmap="jet", extend = "both", 
-#                       vmax = vmax, vmin = vmin)
+
 	t0 = np.min(t)
 	tlast = np.max(t)
 	f0 = np.min(frequencies)
@@ -240,8 +280,8 @@ def cwtplots(track_id, stripped, data, t, frequencies):
 	
 	fig.set_figwidth(small_img_dim+colorbar_pad)
 	cbar = fig.colorbar(cax, ticks=[vmin, vmax])
-	ax.set_ylabel(viz.axislabel("Frequency [Hz]"))
-	ax.set_xlabel(viz.axislabel("Time [sec]"))
+	ax.set_ylabel("Frequency [Hz]")
+	ax.set_xlabel("Time [sec]")
 	ax.set_yticks([20, 7500, 15000, 22050]) # Pretty nicely spaced along audible freq. range
 	ax.set_xticks(np.arange(0, 31, 10)) # Clips are 30s long
 	ax.set_axis_on()
@@ -274,11 +314,15 @@ def make_wavelets(track_id,
 	
 	
 	# Make sure the audio file exists
+	# print("File:", filename)
 	assert(os.path.isfile(filename))
 	
 	# Get the part of the filename that gets replicated in image file names
 	stripped = strip_filename(filename)
 	
+	# If overwrite is not enabled, we decide whether to generate files based on:
+	#   a) whether or not a particular wavelet (DWT/CWT) is requested, and
+	#   b) whether or not all files for that wavelet (or those wavelets) already exists
 	if not overwrite:
 		cwt_to_generate = False
 		if (not os.path.exists(fileify(stripped, "cwt/noframe/", "_small.png")) or  
@@ -295,14 +339,14 @@ def make_wavelets(track_id,
 				not os.path.exists(fileify(stripped, "dwt/frame/", "_large.png"))): # one or more DWT files is missing
 			if generate_dwts:
 				dwt_to_generate = True
-
+	# If overwrite is enabled, always generate the requested type(s) of wavelet images:
 	else:
-		cwt_to_generate = generate_cwts # for this file <= for all files
-		dwt_to_generate = generate_dwts # for this file <= for all files
+		cwt_to_generate = generate_cwts # for this file <- for all files
+		dwt_to_generate = generate_dwts # for this file <- for all files
 
 	files_to_generate = cwt_to_generate or dwt_to_generate # for this file
 
-	# print("There {} files to generate.".format("are a nonzero number of" if files_to_generate else "are no"))
+	#print("There {} files to generate.".format("are a nonzero number of" if files_to_generate else "are no"))
 	
 	if (files_to_generate):
 		# Load and adjust data
@@ -377,126 +421,170 @@ def make_wavelets(track_id,
 			pyplot_cwt_times,
 			pyplot_dwt_times)
 
-# print(tracks.columns.values)
-# print(tracks['set','subset'].unique())
 
-# Code adapted from FMA (commenting mine):
-printt("Functions defined.")
 
-# # Use the small data set (which is balanced re: genre and <8GB):
-# Use the large data set (which is not balanced re: genre but has much more data):
-large = tracks['set', 'subset'] <= 'large'
-printt("{} tracks in the large set.".format(len(large)))
 
-# Get the pre-split sets from the FMA data set
-train = tracks['set', 'split'] == 'training'
-val = tracks['set', 'split'] == 'validation'
-test = tracks['set', 'split'] == 'test'
 
-printt("Splits determined.")
 
-# Overall file generation timer
-timer.tic("total_file_gen")
+if not generate_cwts and not generate_dwts:
+	print ("\nNo wavelet images requested...nothing to do!\n")
+else:
+	# Finish setting up the CWT:
+	scales_max = 2**(num_octaves-1)
+	scales = np.geomspace(1, scales_max, num=num_octaves).astype(int)
 
-# Set up to keep track of the frequency range we're examining:
-max_f, min_f = (None, None) # dummy values, will be overwritten right away
+	# Make some tweaks for the wavelet image generation:
+	figdpi = 256 
+	training_dim = 256
+	border_pad = 0.525 # inches--determined experimentally. The code is written so that the
+					   # border (whitespace, axes, etc) on printed images extends beyond the 
+					   # image as used as data, so that rescaling won't introduce artifacts. 
+					   # This extra padding is used to make sure that when the border for printed
+					   # images is added, the image does not need to be rescaled to fit the page.
+	plt.rcParams["figure.dpi"] = 600
+	plt.rcParams["figure.titlesize"] = 18
+	plt.rcParams["image.interpolation"] = "nearest"
+	plt.rcParams["image.cmap"] = cmap
+	plt.rcParams['xtick.labelsize'] = 8
+	plt.rcParams['ytick.labelsize'] = 8
+	plt.rcParams["savefig.dpi"] = "figure"
+	plt.rcParams["xtick.minor.visible"] = True
+	plt.rcParams['xtick.labelsize'] = 6.5
+	plt.rcParams['ytick.labelsize'] = 6.5
+	colorbar_pad = 0.25 # inches--determined experimentally.
+	plt.rcParams["figure.dpi"] = figdpi 
+	small_img_dim = training_dim/figdpi # inches
+	large_img_dim = 8.5-1.5-1-border_pad # inches: 8.5" paper, 1.5" margin on left and 1" on right
+	# Set default to be the 1024x1024 pixel size
+	plt.rcParams["figure.figsize"] = (small_img_dim, 
+									  small_img_dim) 
 
-# Set up to track how long things take:
-total_times = np.ndarray(0)
-file_load_times = np.ndarray(0)
-cwt_times = np.ndarray(0)
-dwt_times = np.ndarray(0)
-pyplot_cwt_times = np.ndarray(0)
-pyplot_dwt_times = np.ndarray(0)
 
-printt()
+	printt("\nGenerate run begun at {}.\n".format(timer.datetimestamp()))
 
-stopwatch = timer.tic()
-files_generated = {}
-examined = 0
-# Handle each ID in the requested set
-train_track_ids = test.loc[large & test].index
-num_clips = len(train_track_ids) # done + this loop
-if limit_num is not None and num_clips > limit_num:
-	num_clips = limit_num
+	# Load the metadata files
+	tracks = fma_utils.load(input_dir + 'tracks.csv')
+	features = fma_utils.load(input_dir + 'features.csv')
 
-per = np.round(num_clips/100*0.5);
-per = max(per,1)
-for track_id in train_track_ids:
-	if (examined % per == 0):
-		if (examined < num_clips): # not complete
-			stopwatch = timer.toc()
-			printt(f"{examined} ({examined/num_clips:0.1%}) in {timer.time_from_sec(stopwatch)}", 
-				  end='')
-			if (examined > 0):
-				printt(f", T/W", end='')
-				if generate_cwts:
-					printt(f"/CWT/PCWT", end='')
-				if generate_dwts:
-					printt(f"/DWT/PDWT", end="")
-				printt(" = ", end='')
-				printt(f"{0 if len(total_times) == 0 else np.mean(total_times):0.2f}", end='')
-				printt(f"/{0 if len(file_load_times) == 0 else np.mean(file_load_times):0.2f}", end='')
-				if generate_cwts:
-					printt(f"/{0 if len(cwt_times) == 0 else np.mean(cwt_times):0.2f}", end='')
-					printt(f"/{0 if len(pyplot_cwt_times) == 0 else np.mean(pyplot_cwt_times):0.2f}", end='')
-				if generate_dwts:
-					printt(f"/{0 if len(dwt_times) == 0 else np.mean(dwt_times):0.2f}", end='')
-					printt(f"/{0 if len(pyplot_dwt_times) == 0 else np.mean(pyplot_dwt_times):0.2f}", end='')
-			printt("...", end="", flush=True)
+	printt("Tracks and features loaded.")
 
-	examined += 1
-	# Extract the MP3 file name:
-	filename = fma_utils.get_audio_path(AUDIO_DIR, track_id)
-	
-	# Run the file generation:
-	(mif, maf, fg, total_times, file_load_times, cwt_times,
-	 dwt_times, pyplot_cwt_times, pyplot_dwt_times) = make_wavelets(track_id, min_f, max_f, 
-																	filename, 
-																	total_times,
-																	file_load_times,
-																	cwt_times,
-																	dwt_times,
-																	pyplot_cwt_times,
-																	pyplot_dwt_times)
-	
-	# Adjust max/min frequency and warn if necessary--we want all images to handle the same
-	# frequency range:
-	if min_f is None or mif < min_f:
-		if min_f is not None:
-			printt(f"WARNING: adjusting min. frequency from {min_f} to "
-				  f"{mif} after one or more images have already been generated.")
-		min_f = mif
-	if max_f is None or maf > max_f:
-		if max_f is not None:
-			printt(f"WARNING: adjusting max. frequency from {max_f} to "
-				  f"{maf} after one or more images have already been generated.")
-		max_f = maf
+	# Make sure everything in features is in tracks and vice versa
+	np.testing.assert_array_equal(features.index, tracks.index)
+
+	# Use the specified data subset:
+	subset = tracks['set', 'subset'] <= requested_subset
+	printt("{} tracks in the {} set.".format(len(tracks.loc[subset].index), 
+											 requested_subset))
+
+	# Get the pre-split sets from the FMA data set
+	split = tracks['set', 'split'] == requested_split
+	printt("{} tracks in the {} set.".format(len(tracks.loc[subset & split].index), 
+											 requested_split))
+
+	printt("Splits determined.")
+
+	# Overall file generation timer
+	timer.tic("total_file_gen")
+
+	# Set up to keep track of the frequency range we're examining:
+	max_f, min_f = (None, None) # dummy values, will be overwritten right away
+
+	# Set up to track how long things take:
+	total_times = np.ndarray(0)
+	file_load_times = np.ndarray(0)
+	cwt_times = np.ndarray(0)
+	dwt_times = np.ndarray(0)
+	pyplot_cwt_times = np.ndarray(0)
+	pyplot_dwt_times = np.ndarray(0)
+
+	printt()
+
+	stopwatch = timer.tic()
+	files_generated = {}
+	examined = 0
+	# Handle each ID in the requested set/split
+	rel_track_ids = tracks.loc[subset & split].index
+	num_clips = len(rel_track_ids) # done + this loop
+	if limit_num is not None and num_clips > limit_num:
+		num_clips = limit_num
+
+	per = np.round(num_clips/100*0.5);
+	per = max(per,1)
+	for track_id in rel_track_ids:
+		if (examined % per == 0):
+			if (examined < num_clips): # not complete
+				stopwatch = timer.toc()
+				printt(f"{examined} ({examined/num_clips:0.1%}) in {timer.time_from_sec(stopwatch)}", 
+					  end='')
+				if (examined > 0):
+					printt(f", T/W", end='')
+					if generate_cwts:
+						printt(f"/CWT/PCWT", end='')
+					if generate_dwts:
+						printt(f"/DWT/PDWT", end="")
+					printt(" = ", end='')
+					printt(f"{0 if len(total_times) == 0 else np.mean(total_times):0.2f}", end='')
+					printt(f"/{0 if len(file_load_times) == 0 else np.mean(file_load_times):0.2f}", end='')
+					if generate_cwts:
+						printt(f"/{0 if len(cwt_times) == 0 else np.mean(cwt_times):0.2f}", end='')
+						printt(f"/{0 if len(pyplot_cwt_times) == 0 else np.mean(pyplot_cwt_times):0.2f}", end='')
+					if generate_dwts:
+						printt(f"/{0 if len(dwt_times) == 0 else np.mean(dwt_times):0.2f}", end='')
+						printt(f"/{0 if len(pyplot_dwt_times) == 0 else np.mean(pyplot_dwt_times):0.2f}", end='')
+				printt("...", end="", flush=True)
+
+		examined += 1
+		# Extract the MP3 file name:
+		filename = fma_utils.get_audio_path(input_dir, track_id)
 		
-	# Record what files we generated for posterity:
-	files_generated = {**fg, **files_generated}
-	if limit_num is not None and examined >= limit_num:
-		break
-	
-	
-# How did we do?
-printt(f"\n\n\nGenerated {len(files_generated)} file(s) for {examined} track(s) in "
-	  f"{timer.time_from_sec(timer.toc('total_file_gen'))}."
-	  f"\n-----------------------------------------------------")
-for times, name in [(total_times, "total"),
-					(file_load_times, "load"), 
-					(cwt_times, "CWT"),
-					(dwt_times, "DWT"),
-					(pyplot_cwt_times, "PyPlot for CWT"),
-					(pyplot_dwt_times, "PyPlot for DWT")]:
-	if (len(times) > 0):
-		printt(f"* Avg. {name} time: {timer.time_from_sec(np.mean(times))}.")
+		# Run the file generation:
+		(mif, maf, fg, total_times, file_load_times, cwt_times,
+		 dwt_times, pyplot_cwt_times, pyplot_dwt_times) = make_wavelets(track_id, min_f, max_f, 
+																		filename, 
+																		total_times,
+																		file_load_times,
+																		cwt_times,
+																		dwt_times,
+																		pyplot_cwt_times,
+																		pyplot_dwt_times)
 		
-np.savez("fma_generation", 
-		 files_generated=files_generated,
-		 total_times=total_times,
-		 file_load_times=file_load_times,
-		 cwt_times=cwt_times,
-		 dwt_times=dwt_times,
-		 pyplot_cwt_times=pyplot_cwt_times,
-		 pyplot_dwt_times=pyplot_dwt_times)
+		# Adjust max/min frequency and warn if necessary--we want all images to handle the same
+		# frequency range:
+		if min_f is None or mif < min_f:
+			if min_f is not None:
+				printt(f"WARNING: adjusting min. frequency from {min_f} to "
+					  f"{mif} after one or more images have already been generated.")
+			min_f = mif
+		if max_f is None or maf > max_f:
+			if max_f is not None:
+				printt(f"WARNING: adjusting max. frequency from {max_f} to "
+					  f"{maf} after one or more images have already been generated.")
+			max_f = maf
+			
+		# Record what files we generated for posterity:
+		files_generated = {**fg, **files_generated}
+		if limit_num is not None and examined >= limit_num:
+			break
+		
+		
+	# How did we do?
+	printt(f"\n\n\nGenerated {len(files_generated)} file(s) for {examined} track(s) in "
+		  f"{timer.time_from_sec(timer.toc('total_file_gen'))}."
+		  f"\n-----------------------------------------------------")
+	for times, name in [(total_times, "total"),
+						(file_load_times, "load"), 
+						(cwt_times, "CWT"),
+						(dwt_times, "DWT"),
+						(pyplot_cwt_times, "PyPlot for CWT"),
+						(pyplot_dwt_times, "PyPlot for DWT")]:
+		if (len(times) > 0):
+			printt(f"* Avg. {name} time: {timer.time_from_sec(np.mean(times))}.")
+			
+	np.savez("fma_generation", 
+			 files_generated=files_generated,
+			 total_times=total_times,
+			 file_load_times=file_load_times,
+			 cwt_times=cwt_times,
+			 dwt_times=dwt_times,
+			 pyplot_cwt_times=pyplot_cwt_times,
+			 pyplot_dwt_times=pyplot_dwt_times)

@@ -53,7 +53,7 @@ gnureadline==6.3.3
 greenlet==0.4.12
 h5py==2.7.0
 HeapDict==1.0.0
-html5lib==0.9999999
+html5lib==0.99999999
 idna==2.6
 imagesize==0.7.1
 ipykernel==4.6.1

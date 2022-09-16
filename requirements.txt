@@ -77,7 +77,7 @@ librosa==0.5.1
 llvmlite==0.20.0
 locket==0.2.0
 lxml==3.7.3
-Mako==1.0.6
+Mako==1.2.2
 Markdown==2.6.9
 MarkupSafe==0.23
 matplotlib==2.1.0
